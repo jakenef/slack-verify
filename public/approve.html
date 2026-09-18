@@ -1,1 +1,202 @@
-<!-- The page showing the request details and submitter, with Approve and Reject behind the passkey prompt. -->
+<!doctype html>
+<!-- Vouch: the identity check. Someone ran the slash command against this user; the user proves it's them with a passkey. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <meta name="theme-color" content="#08090a" />
+  <meta name="description" content="Vouch — know who's on the other side. Confirm your identity with a passkey." />
+  <title>Verify it's you · Vouch</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect width='20' height='20' rx='5' fill='%235e6ad2'/%3E%3Cpath d='M5.5 6.5l4.5 7 4.5-7' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <span class="brand"><svg class="mark" viewBox="0 0 20 20" aria-hidden="true"><rect width="20" height="20" rx="5" fill="#5e6ad2"/><path d="M5.5 6.5l4.5 7 4.5-7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Vouch</span>
+    <span class="spacer"></span>
+    <span class="status" id="hdr-status" hidden></span>
+  </header>
+  <main class="narrow">
+
+    <section data-state="loading" data-active>
+      <div class="panel pad row"><div class="spinner"></div><span class="muted">Loading your request…</span></div>
+    </section>
+
+    <section data-state="webview">
+      <div class="panel pad">
+        <h1>Open this in Safari</h1>
+        <p class="text-2">Passkeys can't run inside Slack's built-in browser. Tap the <strong>⋯</strong> menu in the corner and choose <strong>Open in Safari</strong> or your phone's browser, then come back here.</p>
+        <p class="small muted">Nothing has been confirmed yet.</p>
+      </div>
+    </section>
+
+    <section data-state="unsupported">
+      <div class="panel pad">
+        <h1>This browser can't use passkeys</h1>
+        <p class="text-2">Open the link on a phone or laptop with a passkey-capable browser such as Safari, Chrome or Edge.</p>
+      </div>
+    </section>
+
+    <section data-state="error">
+      <div class="panel pad">
+        <h1 id="error-title">This link isn't valid</h1>
+        <p id="error-message" class="text-2"></p>
+        <p class="small muted">If you were expecting a check, ask the person to run <code>/vouch</code> again.</p>
+      </div>
+    </section>
+
+    <section data-state="not-enrolled">
+      <div class="panel pad">
+        <h1>No passkey on file</h1>
+        <p class="text-2"><span id="ne-name"></span>, this check needs a passkey for you. Ask an admin to send you an enrol link, create the passkey on your phone, then have <span id="ne-requester"></span> run the command again.</p>
+        <p class="small muted">For your security, a verification link can never be used to enrol.</p>
+      </div>
+    </section>
+
+    <section data-state="review">
+      <div class="panel hero">
+        <img class="avatar lg" id="subject-avatar" alt="" />
+        <h1>Is this you, <span id="subject-first"></span>?</h1>
+        <p><strong id="requester-name"></strong> is asking you to confirm your identity<span id="channel-line"></span>.</p>
+      </div>
+      <div class="panel">
+        <dl class="kv">
+          <div><dt>Reason</dt><dd id="reason"></dd></div>
+          <div><dt>Requested</dt><dd id="created-at"></dd></div>
+          <div><dt>Expires</dt><dd id="expires-at"></dd></div>
+        </dl>
+      </div>
+      <div class="panel pad">
+        <div id="decision-error" class="notice error" role="alert" hidden></div>
+        <div class="actions">
+          <button class="btn primary lg" id="confirm-btn">Yes, it's me</button>
+          <button class="btn ghost lg danger" id="deny-btn">No, this wasn't me</button>
+        </div>
+        <p class="small muted" style="margin-top:12px">Either answer is signed with Face ID, Touch ID or your device passcode, so <span id="requester-name-2"></span> knows it came from you. Your biometrics never leave this device.</p>
+      </div>
+    </section>
+
+    <section data-state="confirming">
+      <div class="panel pad row"><div class="spinner"></div><span id="confirming-text" class="text-2">Confirming with your passkey…</span></div>
+    </section>
+
+    <section data-state="done">
+      <div class="panel hero receipt" id="receipt">
+        <div class="badge" aria-hidden="true">
+          <svg id="badge-ok" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5l4 4 8-9"/></svg>
+          <svg id="badge-no" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" hidden><path d="M5 5l10 10M15 5L5 15"/></svg>
+        </div>
+        <h1 id="receipt-title">Identity confirmed</h1>
+        <p id="receipt-summary"></p>
+      </div>
+      <div class="panel">
+        <dl class="kv">
+          <div><dt>Signed by</dt><dd id="receipt-subject"></dd></div>
+          <div><dt>Time</dt><dd id="receipt-time"></dd></div>
+          <div><dt>Receipt</dt><dd class="mono" id="receipt-id"></dd></div>
+        </dl>
+      </div>
+      <p class="small muted" style="margin-top:12px;text-align:center">The result has been posted back to Slack. You can close this page.</p>
+    </section>
+
+  </main>
+  <footer><span class="tag">Vouch</span> · Know who's on the other side.</footer>
+
+  <script type="module">
+    import { api, decide, inSlackWebview, passkeysSupported, showState, ceremonyMessage, formatTime } from "/client.js";
+
+    const token = location.pathname.split("/").pop();
+    let state = null;
+
+    function headerStatus(text, cls) {
+      const s = document.getElementById("hdr-status");
+      s.textContent = text ? text[0].toUpperCase() + text.slice(1) : ""; s.className = "status " + (cls || ""); s.hidden = !text;
+    }
+
+    async function load() {
+      if (inSlackWebview()) return showState("webview");
+      if (!passkeysSupported()) return showState("unsupported");
+      try {
+        state = await api(`/api/request/${token}`);
+      } catch (err) {
+        const titles = { not_found: "This link isn't valid", expired: "This link has expired", used: "Already answered" };
+        return showState("error", { "#error-title": titles[err.code] || "Something went wrong", "#error-message": err.message });
+      }
+      const { request, subjectEnrolled } = state;
+      if (request.status !== "pending") {
+        headerStatus(request.status, request.status === "confirmed" ? "ok" : "bad");
+        return showState("error", { "#error-title": "Already answered", "#error-message": `This check was ${request.status}.` });
+      }
+      if (!subjectEnrolled) {
+        headerStatus("Not enrolled", "warn");
+        return showState("not-enrolled", { "#ne-name": request.subject.name, "#ne-requester": request.requestedBy.name });
+      }
+      headerStatus("Pending", "warn");
+      document.getElementById("subject-avatar").src = request.subject.avatar || "";
+      showState("review", {
+        "#subject-first": request.subject.name.split(" ")[0],
+        "#requester-name": request.requestedBy.name,
+        "#requester-name-2": request.requestedBy.name,
+        "#channel-line": request.channel ? ` in ${request.channel.name}` : "",
+        "#reason": request.reason || "No reason given",
+        "#created-at": formatTime(request.createdAt),
+        "#expires-at": formatTime(request.expiresAt),
+      });
+    }
+
+    async function act(decision) {
+      const errBox = document.getElementById("decision-error");
+      errBox.hidden = true;
+      for (const id of ["confirm-btn", "deny-btn"]) document.getElementById(id).disabled = true;
+      try {
+        showState("confirming", { "#confirming-text": decision === "confirm" ? "Confirming with your passkey…" : "Signing your denial…" });
+        const { receipt } = await decide(token, decision);
+        const denied = receipt.decision === "denied";
+        document.getElementById("receipt").classList.toggle("denied", denied);
+        document.getElementById("badge-ok").toggleAttribute("hidden", denied);
+        document.getElementById("badge-no").toggleAttribute("hidden", !denied);
+        headerStatus(denied ? "Denied" : "Confirmed", denied ? "bad" : "ok");
+        showState("done", {
+          "#receipt-title": denied ? "Reported as not you" : "Identity confirmed",
+          "#receipt-summary": denied
+            ? `${state.request.requestedBy.name} has been told this request did not come from you.`
+            : `${state.request.requestedBy.name} now has proof this is really you.`,
+          "#receipt-subject": receipt.subject.name,
+          "#receipt-time": formatTime(receipt.at),
+          "#receipt-id": receipt.id,
+        });
+      } catch (err) {
+        showState("review");
+        errBox.textContent = ceremonyMessage(err);
+        errBox.hidden = false;
+      } finally {
+        for (const id of ["confirm-btn", "deny-btn"]) document.getElementById(id).disabled = false;
+      }
+    }
+
+    document.getElementById("confirm-btn").addEventListener("click", () => act("confirm"));
+    document.getElementById("deny-btn").addEventListener("click", () => act("deny"));
+
+    // Design aid: /approve/demo#preview=confirmed or #preview=denied renders the receipt with sample data.
+    function preview() {
+      const which = (location.hash.match(/preview=(confirmed|denied)/) || [])[1];
+      if (!which || !state) return;
+      const denied = which === "denied";
+      document.getElementById("receipt").classList.toggle("denied", denied);
+      document.getElementById("badge-ok").toggleAttribute("hidden", denied);
+      document.getElementById("badge-no").toggleAttribute("hidden", !denied);
+      headerStatus(which, denied ? "bad" : "ok");
+      showState("done", {
+        "#receipt-title": denied ? "Reported as not you" : "Identity confirmed",
+        "#receipt-summary": denied ? `${state.request.requestedBy.name} has been told this request did not come from you.` : `${state.request.requestedBy.name} now has proof this is really you.`,
+        "#receipt-subject": state.request.subject.name, "#receipt-time": formatTime(new Date().toISOString()), "#receipt-id": "rcpt_preview",
+      });
+    }
+    load().then(preview);
+  </script>
+</body>
+</html>

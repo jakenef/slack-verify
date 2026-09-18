@@ -1,0 +1,120 @@
+<!doctype html>
+<!-- Vouch: one-time enrol link. The user opens it on the device they'll verify from and creates a passkey there. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <meta name="theme-color" content="#08090a" />
+  <meta name="description" content="Vouch — know who's on the other side. Set up the passkey you'll verify with." />
+  <title>Set up your passkey · Vouch</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect width='20' height='20' rx='5' fill='%235e6ad2'/%3E%3Cpath d='M5.5 6.5l4.5 7 4.5-7' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <span class="brand"><svg class="mark" viewBox="0 0 20 20" aria-hidden="true"><rect width="20" height="20" rx="5" fill="#5e6ad2"/><path d="M5.5 6.5l4.5 7 4.5-7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Vouch<span class="crumb">Enrol</span></span>
+  </header>
+  <main class="narrow">
+
+    <section data-state="loading" data-active>
+      <div class="panel pad row"><div class="spinner"></div><span class="muted">Loading…</span></div>
+    </section>
+
+    <section data-state="webview">
+      <div class="panel pad">
+        <h1>Open this in Safari</h1>
+        <p class="text-2">Passkeys can't be created inside Slack's built-in browser. Use the <strong>⋯</strong> menu and choose <strong>Open in Safari</strong>.</p>
+      </div>
+    </section>
+
+    <section data-state="unsupported">
+      <div class="panel pad"><h1>This browser can't create passkeys</h1><p class="text-2">Open this link on the phone you'll verify from.</p></div>
+    </section>
+
+    <section data-state="error">
+      <div class="panel pad">
+        <h1 id="error-title">This link isn't valid</h1>
+        <p id="error-message" class="text-2"></p>
+        <p class="small muted">Ask an admin to send you a new enrol link.</p>
+      </div>
+    </section>
+
+    <section data-state="ready">
+      <div class="panel hero">
+        <img class="avatar lg" id="avatar" alt="" />
+        <h1>Hi <span id="first-name"></span></h1>
+        <p>Create a passkey on this device. When someone in Slack asks you to prove it's you, you'll confirm with Face ID, Touch ID or your passcode.</p>
+      </div>
+      <div class="panel">
+        <dl class="kv">
+          <div><dt>Account</dt><dd id="full-name"></dd></div>
+          <div><dt>Role</dt><dd id="role"></dd></div>
+          <div><dt>Device</dt><dd id="device"></dd></div>
+        </dl>
+      </div>
+      <div class="panel pad">
+        <div id="enrol-error" class="notice error" role="alert" hidden></div>
+        <div class="actions"><button class="btn primary lg" id="enrol-btn">Create passkey</button></div>
+        <p class="small muted" style="margin-top:12px">Only a public key is stored on the server. This link stops working once you've enrolled.</p>
+      </div>
+    </section>
+
+    <section data-state="working">
+      <div class="panel pad row"><div class="spinner"></div><span class="text-2">Creating your passkey…</span></div>
+    </section>
+
+    <section data-state="done">
+      <div class="panel hero receipt">
+        <div class="badge" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5l4 4 8-9"/></svg></div>
+        <h1>You're set up</h1>
+        <p>Your <span id="done-label"></span> passkey is on file. You can close this page.</p>
+      </div>
+    </section>
+
+  </main>
+  <footer><span class="tag">Vouch</span> · Know who's on the other side.</footer>
+
+  <script type="module">
+    import { api, enrollWithToken, inSlackWebview, passkeysSupported, showState, ceremonyMessage, deviceLabel, ROLES } from "/client.js";
+
+    const token = location.pathname.split("/").pop();
+
+    async function load() {
+      if (inSlackWebview()) return showState("webview");
+      if (!passkeysSupported()) return showState("unsupported");
+      try {
+        const { user } = await api(`/api/enroll/${token}`);
+        document.getElementById("avatar").src = user.avatar || "";
+        showState("ready", {
+          "#first-name": user.name.split(" ")[0],
+          "#full-name": user.name,
+          "#role": (ROLES.find((r) => r.id === user.role) || {}).label || user.role,
+          "#device": deviceLabel(),
+        });
+      } catch (err) {
+        const titles = { not_found: "This link isn't valid", expired: "This link has expired", used: "Already used" };
+        showState("error", { "#error-title": titles[err.code] || "Something went wrong", "#error-message": err.message });
+      }
+    }
+
+    document.getElementById("enrol-btn").addEventListener("click", async () => {
+      const errBox = document.getElementById("enrol-error");
+      errBox.hidden = true;
+      showState("working");
+      try {
+        const { passkey } = await enrollWithToken(token);
+        showState("done", { "#done-label": passkey.label });
+      } catch (err) {
+        showState("ready");
+        errBox.textContent = ceremonyMessage(err);
+        errBox.hidden = false;
+      }
+    });
+    load();
+  </script>
+</body>
+</html>
