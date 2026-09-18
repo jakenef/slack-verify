@@ -1,0 +1,90 @@
+<!-- Throwaway scratch page for exercising the enroll and decision endpoints; delete once the real pages exist. -->
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>slack-verify test</title>
+    <script src="https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@14.0.0/dist/bundle/index.umd.min.js"></script>
+    <style>
+      body { font: 16px system-ui; margin: 2rem; max-width: 34rem; }
+      button { font: inherit; padding: .6rem 1rem; margin-right: .5rem; }
+      pre { background: #eee; padding: 1rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>slack-verify test page</h1>
+    <div id="ui"></div>
+    <pre id="log">ready</pre>
+
+    <script>
+      const { startRegistration, startAuthentication } = SimpleWebAuthnBrowser;
+      const ui = document.getElementById('ui');
+      const log = (x) => (document.getElementById('log').textContent =
+        typeof x === 'string' ? x : JSON.stringify(x, null, 2));
+
+      async function post(url, body) {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? res.status);
+        return json;
+      }
+
+      const match = location.pathname.match(/^\/r\/(.+)$/);
+
+      if (match) {
+        const requestId = match[1];
+
+        fetch(`/api/request/${requestId}`)
+          .then((r) => r.json())
+          .then((r) => {
+            ui.innerHTML = `<p><b>Request:</b> ${r.details}<br><b>From:</b> ${r.requesterId}<br><b>Status:</b> ${r.status}</p>`;
+            ui.append(button('Approve', () => decide('approve')), button('Reject', () => decide('reject')));
+          });
+
+        async function decide(decision) {
+          try {
+            log(`requesting challenge for ${decision}...`);
+            const optionsJSON = await post('/api/decision/options', { requestId, decision });
+            const response = await startAuthentication({ optionsJSON });
+            log(await post('/api/decision/verify', { requestId, response }));
+          } catch (err) {
+            log(`ERROR: ${err.message}`);
+          }
+        }
+      } else {
+        const select = document.createElement('select');
+        ui.append(select, document.createElement('br'), button('Enroll this device', enroll));
+
+        fetch('/api/slack/users')
+          .then((r) => r.json())
+          .then((users) => {
+            for (const u of users) select.append(new Option(`${u.name} (${u.id})`, u.id));
+          })
+          .catch((err) => log(`could not load users: ${err.message}`));
+
+        async function enroll() {
+          try {
+            log('requesting challenge...');
+            const optionsJSON = await post('/api/enroll/options', { slackUserId: select.value });
+            const response = await startRegistration({ optionsJSON });
+            log(await post('/api/enroll/verify', { response }));
+          } catch (err) {
+            log(`ERROR: ${err.message}`);
+          }
+        }
+      }
+
+      function button(label, onClick) {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.onclick = onClick;
+        return b;
+      }
+    </script>
+  </body>
+</html>

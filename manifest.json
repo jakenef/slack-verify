@@ -1,0 +1,40 @@
+{
+  "display_information": {
+    "name": "Slack Verify",
+    "description": "Identity verification requests, approved with a device passkey.",
+    "background_color": "#1f2d3d"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Slack Verify",
+      "always_online": true
+    },
+    "slash_commands": [
+      {
+        "command": "/verify-id",
+        "description": "Request identity verification from the designated approver",
+        "usage_hint": "opens a short form",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "commands",
+        "chat:write",
+        "chat:write.public",
+        "im:write",
+        "users:read"
+      ]
+    }
+  },
+  "settings": {
+    "interactivity": {
+      "is_enabled": true
+    },
+    "socket_mode_enabled": true,
+    "org_deploy_enabled": false,
+    "token_rotation_enabled": false
+  }
+}
