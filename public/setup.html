@@ -1,1 +1,113 @@
-<!-- The page where the approver picks themselves from the workspace list and enrolls their device. -->
+<!doctype html>
+<!-- The page where the approver picks themselves from the workspace list and enrols their device. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <title>Approver setup</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="top"><span class="dot"></span> Slack Verify · Setup</header>
+  <main>
+
+    <section data-state="loading" data-active>
+      <div class="card row"><div class="spinner"></div><span class="muted">Loading workspace…</span></div>
+    </section>
+
+    <section data-state="webview">
+      <div class="card">
+        <h1>Open this in Safari</h1>
+        <p>Passkeys can't be created inside Slack's built-in browser. Use the <strong>⋯</strong> menu and choose <strong>Open in Safari</strong>.</p>
+      </div>
+    </section>
+
+    <section data-state="unsupported">
+      <div class="card"><h1>This browser can't create passkeys</h1><p>Open this page on the phone you'll approve from.</p></div>
+    </section>
+
+    <section data-state="pick">
+      <div class="card">
+        <h1>Who approves requests?</h1>
+        <p class="muted">Pick yourself. Do this on the phone you'll use to approve; the passkey is created on this device.</p>
+        <div id="current" class="banner" hidden></div>
+        <ul class="members" id="members" role="radiogroup" aria-label="Workspace members"></ul>
+        <div id="setup-error" class="banner error" hidden></div>
+        <div class="actions"><button class="btn" id="enroll-btn" disabled>Enrol this device</button></div>
+        <p class="small muted" style="margin-top:12px">You'll be asked for Face ID, Touch ID or your passcode. Only a public key is stored on the server.</p>
+      </div>
+    </section>
+
+    <section data-state="working">
+      <div class="card row"><div class="spinner"></div><span class="muted">Creating your passkey…</span></div>
+    </section>
+
+    <section data-state="done">
+      <div class="card receipt">
+        <h1>You're the approver</h1>
+        <p class="muted"><span id="done-name"></span> will receive a direct message in Slack whenever someone runs <code>/verify</code>.</p>
+        <div class="actions"><button class="btn secondary" id="again-btn">Change approver</button></div>
+      </div>
+    </section>
+
+    <section data-state="error">
+      <div class="card"><h1>Couldn't load setup</h1><p id="error-message" class="muted"></p></div>
+    </section>
+
+  </main>
+  <footer>Most recent enrolment wins. One approver per workspace in this version.</footer>
+
+  <script type="module">
+    import { api, enroll, inSlackWebview, passkeysSupported, showState, ceremonyMessage } from "/client.js";
+
+    let selected = null;
+
+    async function load() {
+      if (inSlackWebview()) return showState("webview");
+      if (!passkeysSupported()) return showState("unsupported");
+      try {
+        const [{ members }, { approver }] = await Promise.all([api("/api/members"), api("/api/approver")]);
+        const ul = document.getElementById("members");
+        ul.innerHTML = "";
+        for (const m of members) {
+          const li = document.createElement("li");
+          const label = document.createElement("label");
+          const input = Object.assign(document.createElement("input"), { type: "radio", name: "member", value: m.id });
+          input.addEventListener("change", () => { selected = m; document.getElementById("enroll-btn").disabled = false; });
+          const img = Object.assign(document.createElement("img"), { className: "avatar", src: m.avatar || "", alt: "" });
+          const span = document.createElement("span"); span.textContent = m.name;
+          label.append(input, img, span);
+          li.append(label);
+          ul.append(li);
+        }
+        const cur = document.getElementById("current");
+        if (approver) {
+          cur.textContent = `${approver.name} is the current approver${approver.enrolled ? "" : " (no passkey on file)"}. Enrolling replaces them.`;
+          cur.hidden = false;
+        }
+        showState("pick");
+      } catch (err) {
+        showState("error", { "#error-message": err.message });
+      }
+    }
+
+    document.getElementById("enroll-btn").addEventListener("click", async () => {
+      if (!selected) return;
+      const errBox = document.getElementById("setup-error");
+      errBox.hidden = true;
+      showState("working");
+      try {
+        const { approver } = await enroll(selected.id);
+        showState("done", { "#done-name": approver.name });
+      } catch (err) {
+        showState("pick");
+        errBox.textContent = ceremonyMessage(err);
+        errBox.hidden = false;
+      }
+    });
+    document.getElementById("again-btn").addEventListener("click", load);
+    load();
+  </script>
+</body>
+</html>

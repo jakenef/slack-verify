@@ -1,1 +1,170 @@
+<!doctype html>
 <!-- The page showing the request details and submitter, with Approve and Reject behind the passkey prompt. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <title>Review request</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="top"><span class="dot"></span> Slack Verify</header>
+  <main>
+
+    <section data-state="loading" data-active>
+      <div class="card row"><div class="spinner"></div><span class="muted">Loading request…</span></div>
+    </section>
+
+    <section data-state="webview">
+      <div class="card">
+        <h1>Open this in Safari</h1>
+        <p>Passkeys can't run inside Slack's built-in browser. Tap the <strong>⋯</strong> menu in the corner and choose <strong>Open in Safari</strong> (or your phone's browser), then come back here.</p>
+        <p class="small muted">Nothing has been approved or rejected yet.</p>
+      </div>
+    </section>
+
+    <section data-state="unsupported">
+      <div class="card">
+        <h1>This browser can't use passkeys</h1>
+        <p>Open the link on a phone or laptop with a passkey-capable browser (Safari, Chrome, Edge).</p>
+      </div>
+    </section>
+
+    <section data-state="error">
+      <div class="card">
+        <h1 id="error-title">This link isn't valid</h1>
+        <p id="error-message" class="muted"></p>
+        <p class="small muted">If you were expecting a request, ask the requester to run <code>/verify</code> again.</p>
+      </div>
+    </section>
+
+    <section data-state="no-approver">
+      <div class="card">
+        <h1>No approver is set up</h1>
+        <p>Someone needs to enrol as the approver before requests can be decided.</p>
+        <div class="actions"><a class="btn" href="/setup">Go to setup</a></div>
+      </div>
+    </section>
+
+    <section data-state="review">
+      <div class="card">
+        <h2>Request</h2>
+        <p class="summary" id="summary"></p>
+        <dl class="fields" id="fields"></dl>
+      </div>
+      <div class="card">
+        <h2>Submitted by</h2>
+        <div class="row">
+          <img class="avatar" id="requester-avatar" alt="" />
+          <div>
+            <div id="requester-name" style="font-weight:600"></div>
+            <div class="small muted" id="created-at"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Your decision</h2>
+        <p class="small muted" id="approver-line"></p>
+        <div id="enrol-banner" class="banner" hidden>No passkey is on file for this device yet. You'll be asked to create one first.</div>
+        <div id="decision-error" class="banner error" hidden></div>
+        <div class="actions">
+          <button class="btn approve" id="approve-btn">Approve</button>
+          <button class="btn reject" id="reject-btn">Reject</button>
+        </div>
+        <p class="small muted" style="margin-top:12px">You'll confirm with Face ID, Touch ID or your device passcode. Your biometrics never leave this device.</p>
+      </div>
+    </section>
+
+    <section data-state="confirming">
+      <div class="card row"><div class="spinner"></div><span id="confirming-text" class="muted">Confirming with your passkey…</span></div>
+    </section>
+
+    <section data-state="done">
+      <div class="card receipt" id="receipt">
+        <h1 id="receipt-title">Approved</h1>
+        <p class="muted" id="receipt-summary"></p>
+        <dl class="fields">
+          <dt>Approver</dt><dd id="receipt-approver"></dd>
+          <dt>Time</dt><dd id="receipt-time"></dd>
+          <dt>Receipt</dt><dd class="id" id="receipt-id"></dd>
+        </dl>
+        <p class="small muted" style="margin-top:14px">The result has been posted back to Slack. You can close this page.</p>
+      </div>
+    </section>
+
+  </main>
+  <footer>Secured with your device passkey</footer>
+
+  <script type="module">
+    import { api, decide, enroll, inSlackWebview, passkeysSupported, showState, ceremonyMessage, formatTime } from "/client.js";
+
+    const token = location.pathname.split("/").pop();
+    let state = null;
+
+    async function load() {
+      if (inSlackWebview()) return showState("webview");
+      if (!passkeysSupported()) return showState("unsupported");
+      try {
+        state = await api(`/api/request/${token}`);
+      } catch (err) {
+        const titles = { not_found: "This link isn't valid", expired: "This link has expired", used: "Already decided" };
+        return showState("error", { "#error-title": titles[err.code] || "Something went wrong", "#error-message": err.message });
+      }
+      const { request, approver } = state;
+      if (!approver) return showState("no-approver");
+      if (request.status !== "pending") {
+        return showState("error", { "#error-title": "Already decided", "#error-message": `This request was ${request.status}.` });
+      }
+      document.getElementById("summary").textContent = request.details.summary;
+      const dl = document.getElementById("fields");
+      dl.innerHTML = "";
+      for (const f of request.details.fields) {
+        const dt = document.createElement("dt"); dt.textContent = f.label;
+        const dd = document.createElement("dd"); dd.textContent = f.value;
+        dl.append(dt, dd);
+      }
+      document.getElementById("requester-name").textContent = request.requester.name;
+      document.getElementById("requester-avatar").src = request.requester.avatar || "";
+      document.getElementById("created-at").textContent = "Requested " + formatTime(request.createdAt);
+      document.getElementById("approver-line").textContent = `Deciding as ${approver.name}`;
+      document.getElementById("enrol-banner").hidden = approver.enrolled;
+      showState("review");
+    }
+
+    async function act(decision) {
+      const errBox = document.getElementById("decision-error");
+      errBox.hidden = true;
+      for (const id of ["approve-btn", "reject-btn"]) document.getElementById(id).disabled = true;
+      try {
+        if (!state.approver.enrolled) {
+          showState("confirming", { "#confirming-text": "Creating a passkey on this device…" });
+          const r = await enroll(state.approver.id);
+          state.approver = r.approver;
+        }
+        showState("confirming", { "#confirming-text": "Confirming with your passkey…" });
+        const { receipt } = await decide(token, decision);
+        const rejected = receipt.decision === "rejected";
+        document.getElementById("receipt").classList.toggle("rejected", rejected);
+        showState("done", {
+          "#receipt-title": rejected ? "Rejected" : "Approved",
+          "#receipt-summary": state.request.details.summary,
+          "#receipt-approver": receipt.approver.name,
+          "#receipt-time": formatTime(receipt.at),
+          "#receipt-id": receipt.id,
+        });
+      } catch (err) {
+        showState("review");
+        errBox.textContent = ceremonyMessage(err);
+        errBox.hidden = false;
+      } finally {
+        for (const id of ["approve-btn", "reject-btn"]) document.getElementById(id).disabled = false;
+      }
+    }
+
+    document.getElementById("approve-btn").addEventListener("click", () => act("approve"));
+    document.getElementById("reject-btn").addEventListener("click", () => act("reject"));
+    load();
+  </script>
+</body>
+</html>
