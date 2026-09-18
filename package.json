@@ -1,0 +1,26 @@
+{
+  "name": "slack-verify",
+  "version": "1.0.0",
+  "description": "Build one complete workflow for identity verification. One employee creates the request in Slack. One designated approver reviews it on their phone and confirms a decision with the device passkey or biometric prompt. Slack then shows the final result and receipt. The product does not move money or detect deepfakes.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node --env-file=.env src/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jakenef/slack-verify.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/jakenef/slack-verify/issues"
+  },
+  "homepage": "https://github.com/jakenef/slack-verify#readme",
+  "dependencies": {
+    "@simplewebauthn/server": "^14.0.2",
+    "@slack/bolt": "^5.1.0",
+    "express": "^5.2.1"
+  }
+}
