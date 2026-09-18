@@ -4,7 +4,7 @@ Build one complete workflow for identity verification. One employee creates the 
 
 ## Core user flow
 
-1. The requester types /verify in Slack and opens a short form.
+1. The requester types /verify-id in Slack and opens a short form.
 2. The request is routed automatically to the single designated approver.
 3. The approver receives a direct message with a secure Review request link.
 4. The mobile page shows the exact request details and who submitted them.
@@ -13,9 +13,9 @@ Build one complete workflow for identity verification. One employee creates the 
 
 ## How it works
 
-One program does everything: it talks to Slack and serves the web pages. Slack itself holds only configuration — app name, permissions, the /verify command — never code.
+One program does everything: it talks to Slack and serves the web pages. Slack itself holds only configuration — app name, permissions, the /verify-id command — never code.
 
-Stack: Node/TypeScript, Slack Bolt, Express, SimpleWebAuthn, SQLite.
+Stack: Node (plain JavaScript), Slack Bolt, Express, SimpleWebAuthn, and a JSON file for storage.
 
 Slack connection uses Socket Mode, so the Slack half needs no public URL. The pages still do, so tunnel or deploy.
 
@@ -32,8 +32,8 @@ Slack connection uses Socket Mode, so the Slack half needs no public URL. The pa
 
 ## Server flow
 
-1. `/verify` opens the modal.
-2. On submit, save the request, mint a one-time token, DM the approver the link.
+1. `/verify-id` opens the modal.
+2. On submit, save the request and DM the approver a link. One random ID is the database key, the URL, and the receipt number.
 3. The approval page verifies the signature against the stored public key and records the decision.
 4. Update the DM and post the receipt back to Slack.
 
@@ -43,4 +43,4 @@ Slack connection uses Socket Mode, so the Slack half needs no public URL. The pa
 - Biometrics cannot run inside Slack. Block Kit has no JavaScript, so the passkey prompt must happen on a real browser page.
 - Slack's in-app browser may not support passkeys. Detect it, prompt "Open in Safari," and test on a real phone early.
 - WebAuthn is pinned to the domain. A rotating tunnel URL invalidates enrolled passkeys, so use a stable domain.
-- If `/verify` runs before anyone has enrolled, reply with a private message that no approver is configured.
+- If `/verify-id` runs before anyone has enrolled, reply with a private message that no approver is configured.
