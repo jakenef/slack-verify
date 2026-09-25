@@ -1,0 +1,311 @@
+<!doctype html>
+<!-- Vouch admin: who is configured, what role they have, which passkeys they hold. Signed in with the admin's own passkey. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <meta name="theme-color" content="#08090a" />
+  <meta name="description" content="Vouch admin — manage the people in your org, their roles and their passkeys." />
+  <title>Users · Vouch</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect width='20' height='20' rx='5' fill='%235e6ad2'/%3E%3Cpath d='M5.5 6.5l4.5 7 4.5-7' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <span class="brand"><svg class="mark" viewBox="0 0 20 20" aria-hidden="true"><rect width="20" height="20" rx="5" fill="#5e6ad2"/><path d="M5.5 6.5l4.5 7 4.5-7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Vouch<span class="crumb">Admin</span></span>
+    <span class="spacer"></span>
+    <span id="who" class="small muted" hidden></span>
+    <button class="btn ghost sm" id="logout-btn" hidden>Sign out</button>
+  </header>
+  <main class="wide">
+
+    <section data-state="loading" data-active>
+      <div class="panel pad row"><div class="spinner"></div><span class="muted">Loading…</span></div>
+    </section>
+
+    <section data-state="webview">
+      <div class="panel pad" style="max-width:440px;margin:0 auto"><h1>Open this in a browser</h1><p class="text-2">The admin page uses passkeys, which Slack's built-in browser can't run. Open it in Safari or Chrome.</p></div>
+    </section>
+
+    <section data-state="unsupported">
+      <div class="panel pad" style="max-width:440px;margin:0 auto"><h1>This browser can't use passkeys</h1><p class="text-2">Open this page in Safari, Chrome or Edge.</p></div>
+    </section>
+
+    <section data-state="signin">
+      <div class="panel pad" style="max-width:400px;margin:32px auto 0">
+        <h1>Sign in to Vouch</h1>
+        <p class="text-2">Use the passkey you enrolled as an admin.</p>
+        <div id="signin-error" class="notice error" role="alert" hidden></div>
+        <div class="actions"><button class="btn primary lg" id="signin-btn">Continue with passkey</button></div>
+      </div>
+    </section>
+
+    <section data-state="setup">
+      <div class="panel pad" style="max-width:440px;margin:24px auto 0">
+        <h1>Set up the first admin</h1>
+        <p class="text-2">Nobody has an admin passkey yet. Pick yourself from the workspace and create a passkey on this device. After that, this page is locked to admin passkeys.</p>
+        <label class="field" style="margin-top:14px"><span>Search the workspace</span><input type="search" id="setup-search" placeholder="Start typing a name" autocomplete="off" /></label>
+        <ul class="members" id="setup-members" role="radiogroup" aria-label="Workspace members"></ul>
+        <div id="setup-error" class="notice error" role="alert" hidden></div>
+        <div class="actions"><button class="btn primary lg" id="setup-btn" disabled>Make me admin and create passkey</button></div>
+      </div>
+    </section>
+
+    <section data-state="dashboard">
+      <div class="toolbar">
+        <div>
+          <h1>Users</h1>
+          <div class="sub" id="user-count"></div>
+        </div>
+        <button class="btn primary" id="add-btn">Add user</button>
+      </div>
+      <div id="dash-error" class="notice error" role="status" hidden></div>
+      <div class="panel table">
+        <div class="urow head" role="row">
+          <span>Person</span><span>Role</span><span>Passkeys</span><span>Last verified</span><span></span>
+        </div>
+        <div id="users"></div>
+        <div id="empty" class="empty" hidden>No users yet. Add someone to get started.</div>
+      </div>
+      <p class="hint">A passkey can only be created on the device it lives on. Send people an enrol link and they'll set it up on their own phone. You can enrol the device you're using right now from your own row.</p>
+    </section>
+
+    <section data-state="error">
+      <div class="panel pad"><h1>Couldn't load</h1><p id="error-message" class="text-2"></p></div>
+    </section>
+
+  </main>
+
+  <dialog id="add-dialog" aria-labelledby="add-title">
+    <form method="dialog" class="dialog-body" id="add-form">
+      <h2 class="dialog-title" id="add-title">Add a user</h2>
+      <label class="field"><span>Workspace member</span><input type="search" id="add-search" placeholder="Start typing a name" autocomplete="off" /></label>
+      <ul class="members" id="add-members" role="radiogroup" aria-label="Workspace members"></ul>
+      <label class="field"><span>Role</span><select id="add-role"></select></label>
+      <p class="small muted" id="add-role-hint"></p>
+      <div id="add-error" class="notice error" role="alert" hidden></div>
+      <div class="actions inline">
+        <button class="btn" value="cancel" type="button" id="add-cancel">Cancel</button>
+        <button class="btn primary" id="add-submit" disabled type="submit">Add user</button>
+      </div>
+    </form>
+  </dialog>
+
+  <footer><span class="tag">Vouch</span> · Know who's on the other side.</footer>
+
+  <script type="module">
+    import { api, adminLogin, enrollSelf, inSlackWebview, passkeysSupported, showState, ceremonyMessage, formatTime, timeAgo, el, ROLES } from "/client.js";
+
+    let me = null;       // signed-in admin (null during setup)
+    let setup = false;
+
+    // ---------- boot ----------
+    async function boot() {
+      if (inSlackWebview()) return showState("webview");
+      if (!passkeysSupported()) return showState("unsupported");
+      try {
+        ({ user: me, setup } = await api("/api/admin/me"));
+      } catch (err) {
+        return showState("error", { "#error-message": err.message });
+      }
+      if (setup) return showSetup();
+      if (!me) return showState("signin");
+      return await showDashboard();
+    }
+
+    // ---------- sign in ----------
+    document.getElementById("signin-btn").addEventListener("click", async () => {
+      const errBox = document.getElementById("signin-error");
+      errBox.hidden = true;
+      try {
+        ({ user: me } = await adminLogin());
+        showDashboard();
+      } catch (err) {
+        errBox.textContent = ceremonyMessage(err);
+        errBox.hidden = false;
+      }
+    });
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      await api("/api/admin/logout", {});
+      me = null;
+      document.getElementById("who").hidden = true;
+      document.getElementById("logout-btn").hidden = true;
+      showState("signin");
+    });
+
+    // ---------- member search (shared by setup + add dialog) ----------
+    function memberPicker(inputId, listId, onPick, exclude = () => false) {
+      const input = document.getElementById(inputId);
+      const list = document.getElementById(listId);
+      let timer;
+      async function search() {
+        const q = input.value.trim();
+        let members = [];
+        try { ({ members } = await api(`/api/members?q=${encodeURIComponent(q)}`)); } catch { /* leave empty */ }
+        list.innerHTML = "";
+        for (const m of members.filter((m) => !exclude(m))) {
+          const radio = el("input", { type: "radio", name: listId, value: m.id, onchange: () => onPick(m) });
+          list.append(el("li", {}, el("label", {}, radio, el("img", { className: "avatar sm", src: m.avatar || "", alt: "" }), el("span", {}, m.name))));
+        }
+        if (!list.children.length) list.append(el("li", { className: "muted small pad" }, q ? "No one matches." : "No members found."));
+      }
+      input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(search, 150); });
+      return { search, reset() { input.value = ""; list.innerHTML = ""; } };
+    }
+
+    // ---------- first-admin setup ----------
+    let setupPick = null;
+    const setupPicker = memberPicker("setup-search", "setup-members", (m) => { setupPick = m; document.getElementById("setup-btn").disabled = false; });
+    function showSetup() { setupPicker.search(); showState("setup"); }
+    document.getElementById("setup-btn").addEventListener("click", async () => {
+      if (!setupPick) return;
+      const errBox = document.getElementById("setup-error");
+      errBox.hidden = true;
+      try {
+        await api("/api/users", { userId: setupPick.id, role: "admin" });
+        await enrollSelf(setupPick.id);
+        ({ user: me, setup } = await api("/api/admin/me"));
+        showDashboard();
+      } catch (err) {
+        errBox.textContent = ceremonyMessage(err);
+        errBox.hidden = false;
+      }
+    });
+
+    // ---------- dashboard ----------
+    async function showDashboard() {
+      if (me) {
+        document.getElementById("who").textContent = me.name;
+        document.getElementById("who").hidden = false;
+        document.getElementById("logout-btn").hidden = false;
+      }
+      await refresh();
+      showState("dashboard");
+    }
+
+    async function refresh() {
+      const box = document.getElementById("dash-error");
+      box.hidden = true;
+      let users = [];
+      try { ({ users } = await api("/api/users")); } catch (err) {
+        if (err.code === "unauthorized") { me = null; return showState("signin"); }
+        box.textContent = err.message; box.hidden = false; return;
+      }
+      users.sort((a, b) => a.name.localeCompare(b.name));
+      const holder = document.getElementById("users");
+      holder.innerHTML = "";
+      for (const u of users) holder.append(userRow(u));
+      document.getElementById("empty").hidden = users.length > 0;
+      const n = users.length, k = users.filter((u) => u.passkeys.length).length;
+      document.getElementById("user-count").textContent = `${n} ${n === 1 ? "person" : "people"} · ${k} with a passkey`;
+    }
+
+    function roleSelect(u) {
+      const sel = el("select", { className: "role", ariaLabel: `Role for ${u.name}` });
+      for (const r of ROLES) sel.append(el("option", { value: r.id, selected: r.id === u.role }, r.label));
+      sel.addEventListener("change", async () => {
+        try { await api(`/api/users/${u.id}`, { role: sel.value }, "PATCH"); u.role = sel.value; }
+        catch (err) { flash(err.message); sel.value = u.role; }
+      });
+      return sel;
+    }
+
+    function userRow(u) {
+      const isMe = me && me.id === u.id;
+      const keys = el("div", { className: "keys" });
+      for (const k of u.passkeys) {
+        keys.append(el("span", { className: "chip", title: "Added " + formatTime(k.createdAt) },
+          k.label, el("button", { className: "x", type: "button", ariaLabel: `Remove ${k.label} passkey for ${u.name}`, onclick: () => revoke(u, k) }, "×")));
+      }
+      if (!u.passkeys.length) keys.append(el("span", { className: "status warn" }, "None"));
+
+      const actions = el("div", { className: "row-actions" });
+      if (isMe) actions.append(el("button", { className: "btn ghost sm", type: "button", onclick: () => enrolHere(u) }, "Enrol this device"));
+      actions.append(el("button", { className: "btn ghost sm", type: "button", onclick: () => sendLink(u) }, "Send enrol link"));
+      if (!isMe) actions.append(el("button", { className: "btn ghost sm danger", type: "button", onclick: () => remove(u) }, "Remove"));
+
+      return el("div", { className: "urow", role: "row", dataset: { user: u.id } },
+        el("div", { className: "person" },
+          el("img", { className: "avatar", src: u.avatar || "", alt: "" }),
+          el("div", {}, el("div", { className: "name" }, u.name, isMe ? el("span", { className: "you" }, "You") : null), el("div", { className: "id" }, u.id))),
+        el("div", { className: "cell" }, el("span", { className: "cell-label" }, "Role"), roleSelect(u)),
+        el("div", { className: "cell" }, el("span", { className: "cell-label" }, "Passkeys"), keys),
+        el("div", { className: "cell muted" }, el("span", { className: "cell-label" }, "Last verified"), u.lastVerifiedAt ? el("span", { title: formatTime(u.lastVerifiedAt) }, timeAgo(u.lastVerifiedAt)) : "Never"),
+        actions);
+    }
+
+    function flash(msg, ok = false) {
+      const box = document.getElementById("dash-error");
+      box.className = "notice " + (ok ? "ok" : "error");
+      box.textContent = msg;
+      box.hidden = false;
+      clearTimeout(flash.t);
+      flash.t = setTimeout(() => { box.hidden = true; }, 4000);
+    }
+
+    async function revoke(u, k) {
+      if (!confirm(`Remove the ${k.label} passkey for ${u.name}? They won't be able to verify from that device.`)) return;
+      try { await api(`/api/users/${u.id}/passkeys/${k.id}`, undefined, "DELETE"); await refresh(); }
+      catch (err) { flash(err.message); }
+    }
+    async function remove(u) {
+      if (!confirm(`Remove ${u.name} and all their passkeys?`)) return;
+      try { await api(`/api/users/${u.id}`, undefined, "DELETE"); await refresh(); }
+      catch (err) { flash(err.message); }
+    }
+    async function sendLink(u) {
+      try { await api(`/api/users/${u.id}/enroll-link`, {}); flash(`Sent ${u.name} an enrol link in Slack.`, true); }
+      catch (err) { flash(err.message); }
+    }
+    async function enrolHere(u) {
+      try { await enrollSelf(u.id); await refresh(); flash("Passkey created on this device.", true); }
+      catch (err) { flash(ceremonyMessage(err)); }
+    }
+
+    // ---------- add dialog ----------
+    const dialog = document.getElementById("add-dialog");
+    let addPick = null;
+    const addPicker = memberPicker("add-search", "add-members",
+      (m) => { addPick = m; document.getElementById("add-submit").disabled = false; },
+      (m) => !!document.querySelector(`.urow[data-user="${m.id}"]`));
+    const roleSel = document.getElementById("add-role");
+    for (const r of ROLES) roleSel.append(el("option", { value: r.id }, r.label));
+    roleSel.value = "member";
+    const roleHint = () => { document.getElementById("add-role-hint").textContent = ROLES.find((r) => r.id === roleSel.value).hint; };
+    roleSel.addEventListener("change", roleHint);
+    roleHint();
+
+    document.getElementById("add-btn").addEventListener("click", () => {
+      addPick = null;
+      addPicker.reset();
+      document.getElementById("add-submit").disabled = true;
+      document.getElementById("add-error").hidden = true;
+      addPicker.search();
+      dialog.showModal();
+      document.getElementById("add-search").focus();
+    });
+    document.getElementById("add-cancel").addEventListener("click", () => dialog.close());
+    document.getElementById("add-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!addPick) return;
+      const errBox = document.getElementById("add-error");
+      errBox.hidden = true;
+      try {
+        await api("/api/users", { userId: addPick.id, role: roleSel.value });
+        dialog.close();
+        await refresh();
+        flash(`Added ${addPick.name}. Send them an enrol link so they can create a passkey.`, true);
+      } catch (err) {
+        errBox.textContent = err.message;
+        errBox.hidden = false;
+      }
+    });
+
+    boot().then(() => { if (location.hash === "#add") document.getElementById("add-btn").click(); }); // design aid: /admin#add opens the dialog
+  </script>
+</body>
+</html>
