@@ -31,6 +31,8 @@ app.command('/verify-id', async ({ ack, body, client }) => {
             type: 'plain_text_input',
             action_id: 'value',
             multiline: true,
+            // The receipt shows this in a block field, which Slack caps at 2000 characters.
+            max_length: 1500,
             placeholder: { type: 'plain_text', text: '$48,000 wire to Acme Corp' },
           },
         },
