@@ -1,1 +1,119 @@
+<!doctype html>
 <!-- The page showing the request details and submitter, with Approve and Reject behind the passkey prompt. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffd60a" />
+    <title>Review request</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Bungee&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main>
+      <p class="mark">Verify</p>
+
+      <div id="blocker" class="banner" hidden></div>
+
+      <section id="review" hidden>
+        <h1 id="details"></h1>
+        <p class="meta">Requested by <b id="requester"></b></p>
+        <p class="meta" id="sent"></p>
+
+        <div class="actions">
+          <button type="button" class="primary" data-decision="approve">Approve</button>
+          <button type="button" data-decision="reject">Reject</button>
+          <p class="note" id="hint">Face ID or your fingerprint confirms your choice.</p>
+          <p class="error" id="error" role="alert"></p>
+        </div>
+      </section>
+
+      <section id="done" hidden>
+        <p class="verdict" id="verdict"></p>
+        <p class="meta" id="done-details"></p>
+        <dl class="receipt">
+          <div><dt>Requested by</dt><dd id="done-requester"></dd></div>
+          <div><dt>Decided</dt><dd id="done-time"></dd></div>
+          <div><dt>Receipt</dt><dd id="done-receipt"></dd></div>
+        </dl>
+        <p class="note">The receipt is posted in Slack. You can close this page.</p>
+      </section>
+
+      <p class="error" id="fatal" role="alert"></p>
+    </main>
+
+    <script type="module">
+      import { getJSON, decide, passkeyBlocker, showBlocker, explain } from '/client.js';
+
+      const $ = (id) => document.getElementById(id);
+      const requestId = location.pathname.split('/').pop();
+      const buttons = document.querySelectorAll('[data-decision]');
+      const when = (iso) =>
+        new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+      let request;
+
+      try {
+        request = await getJSON(`/api/request/${requestId}`);
+        request.status === 'decided' ? showDone(request.decision, request.decidedAt) : showReview();
+      } catch (err) {
+        $('fatal').textContent = err.message === 'Request not found'
+          ? 'This request doesn’t exist. Check the link in Slack.'
+          : err.message;
+      }
+
+      function showReview() {
+        $('details').textContent = request.details;
+        $('details').classList.toggle('long', request.details.length > 60);
+        $('requester').textContent = request.requesterName ?? request.requesterId;
+        $('sent').textContent = `Sent ${when(request.createdAt)}`;
+        $('review').hidden = false;
+
+        const blocker = passkeyBlocker();
+        if (blocker) {
+          showBlocker($('blocker'), blocker);
+          buttons.forEach((b) => (b.disabled = true));
+          $('hint').hidden = true;
+        }
+      }
+
+      buttons.forEach((button) =>
+        button.addEventListener('click', async () => {
+          const decision = button.dataset.decision;
+          $('error').textContent = '';
+          buttons.forEach((b) => (b.disabled = true));
+          const label = button.textContent;
+          button.textContent = 'Confirming…';
+
+          try {
+            await decide(requestId, decision);
+            showDone(decision, new Date().toISOString());
+          } catch (err) {
+            if (err.status === 409) return showDone(err.data.decision, null);
+            $('error').innerHTML = err.message === 'No approver enrolled'
+              ? 'No approver is enrolled yet. <a href="/setup">Enroll this phone</a> first.'
+              : '';
+            if (!$('error').innerHTML) $('error').textContent = explain(err);
+            buttons.forEach((b) => (b.disabled = false));
+            button.textContent = label;
+          }
+        }),
+      );
+
+      function showDone(decision, decidedAt) {
+        $('review').hidden = true;
+        $('blocker').hidden = true;
+        $('verdict').textContent = decision === 'approve' ? 'Approved' : 'Rejected';
+        $('verdict').classList.add('stamp');
+        $('done-details').textContent = request.details;
+        $('done-requester').textContent = request.requesterName ?? request.requesterId;
+        $('done-time').textContent = decidedAt ? when(decidedAt) : 'Earlier';
+        $('done-receipt').textContent = requestId;
+        $('done').hidden = false;
+        document.title = $('verdict').textContent;
+      }
+    </script>
+  </body>
+</html>

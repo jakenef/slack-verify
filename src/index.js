@@ -8,6 +8,7 @@ import router from './routes.js';
 const server = express();
 server.use(express.json());
 server.use(router);
+server.use(express.static(new URL('../public', import.meta.url).pathname));
 
 server.use((err, req, res, next) => {
   console.error(err);

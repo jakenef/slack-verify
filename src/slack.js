@@ -143,3 +143,12 @@ export async function listUsers() {
     .filter((m) => !m.is_bot && !m.deleted && m.id !== 'USLACKBOT')
     .map((m) => ({ id: m.id, name: m.profile?.real_name || m.name }));
 }
+
+export async function getUserName(userId) {
+  try {
+    const { user } = await app.client.users.info({ user: userId });
+    return user.profile?.real_name || user.name;
+  } catch {
+    return null;
+  }
+}

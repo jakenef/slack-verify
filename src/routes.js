@@ -4,15 +4,15 @@ import { Router } from 'express';
 import { fileURLToPath } from 'node:url';
 import * as store from './store.js';
 import * as webauthn from './webauthn.js';
-import { postReceipt, listUsers } from './slack.js';
+import { postReceipt, listUsers, getUserName } from './slack.js';
 
 const router = Router();
-const testPage = fileURLToPath(new URL('../public/test.html', import.meta.url));
+const page = (name) => fileURLToPath(new URL(`../public/${name}`, import.meta.url));
 
-router.get('/setup', (req, res) => res.sendFile(testPage));
-router.get('/r/:id', (req, res) => res.sendFile(testPage));
+router.get('/setup', (req, res) => res.sendFile(page('setup.html')));
+router.get('/r/:id', (req, res) => res.sendFile(page('approve.html')));
 
-router.get('/api/request/:id', (req, res) => {
+router.get('/api/request/:id', async (req, res) => {
   const request = store.getRequest(req.params.id);
   if (!request) return res.status(404).json({ error: 'Request not found' });
 
@@ -20,8 +20,11 @@ router.get('/api/request/:id', (req, res) => {
     id: request.id,
     details: request.details,
     requesterId: request.requesterId,
+    requesterName: await getUserName(request.requesterId),
     status: request.status,
     decision: request.decision,
+    createdAt: request.createdAt,
+    decidedAt: request.decidedAt,
   });
 });
 

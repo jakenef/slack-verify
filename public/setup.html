@@ -1,1 +1,79 @@
+<!doctype html>
 <!-- The page where the approver picks themselves from the workspace list and enrolls their device. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffd60a" />
+    <title>Enroll approver</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Bungee&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main>
+      <p class="mark">Verify</p>
+
+      <div id="blocker" class="banner" hidden></div>
+
+      <section id="form">
+        <h1>Become the approver</h1>
+        <p class="meta">Verification requests from Slack will come to you. You’ll confirm each one on this phone with Face ID or your fingerprint.</p>
+
+        <div class="actions">
+          <label for="who">Who are you?</label>
+          <select id="who" disabled><option>Loading people…</option></select>
+          <button type="button" class="primary" id="enroll" disabled>Enroll this phone</button>
+          <p class="error" id="error" role="alert"></p>
+        </div>
+      </section>
+
+      <section id="done" hidden>
+        <p class="verdict stamp">Enrolled</p>
+        <p class="meta"><b id="name"></b> is now the approver. Requests will arrive as a Slack message with a link back to this phone.</p>
+      </section>
+    </main>
+
+    <script type="module">
+      import { getJSON, enroll, passkeyBlocker, showBlocker, explain } from '/client.js';
+
+      const $ = (id) => document.getElementById(id);
+      const blocker = passkeyBlocker();
+      if (blocker) showBlocker($('blocker'), blocker);
+
+      try {
+        const users = await getJSON('/api/slack/users');
+        users.sort((a, b) => a.name.localeCompare(b.name));
+        $('who').replaceChildren(new Option('Choose your name', ''), ...users.map((u) => new Option(u.name, u.id)));
+        $('who').disabled = false;
+      } catch (err) {
+        $('who').replaceChildren(new Option('Couldn’t load people'));
+        $('error').textContent = `Couldn’t load the Slack member list: ${err.message}`;
+      }
+
+      $('who').addEventListener('change', () => {
+        $('enroll').disabled = !$('who').value || !!blocker;
+      });
+
+      $('enroll').addEventListener('click', async () => {
+        const button = $('enroll');
+        $('error').textContent = '';
+        button.disabled = true;
+        button.textContent = 'Enrolling…';
+
+        try {
+          await enroll($('who').value);
+          $('name').textContent = $('who').selectedOptions[0].text;
+          $('form').hidden = true;
+          $('blocker').hidden = true;
+          $('done').hidden = false;
+        } catch (err) {
+          $('error').textContent = explain(err);
+          button.disabled = false;
+          button.textContent = 'Enroll this phone';
+        }
+      });
+    </script>
+  </body>
+</html>
